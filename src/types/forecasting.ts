@@ -60,6 +60,8 @@ export interface ForecastRunResponse {
   rekomendasi_unit_tambahan: number;
   catatan_jadwal: string;
   kapasitas: KapasitasRute;
+  /** Diagnostic checking: uji Ljung-Box pada residual model terpilih. */
+  uji_residual?: { metode: string; lag: number; p_value: number; lolos: boolean } | null;
   deret: ForecastDeretPoint[];
   durasi_detik: number;
   dari_cache: boolean;

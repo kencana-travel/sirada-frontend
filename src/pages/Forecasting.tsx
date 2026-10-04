@@ -376,6 +376,12 @@ export default function Forecasting() {
             <p className="border-t border-hairline px-5 py-3 text-xs leading-relaxed text-slate-400">
               Data latih {result.jendela_latih_hari} hari ({result.periode_data.mulai} s.d. {result.periode_data.selesai}), uji ADF
               p-value {result.adf_p_value} (d = {result.ordo_differencing}).{' '}
+              {result.uji_residual &&
+                `Uji residual ${result.uji_residual.metode} (lag ${result.uji_residual.lag}): p-value ${result.uji_residual.p_value} — ${
+                  result.uji_residual.lolos
+                    ? 'residual tidak berautokorelasi.'
+                    : 'residual masih berautokorelasi, masih ada pola yang belum tertangkap model.'
+                } `}
               {result.pakai_kalender
                 ? result.variabel_eksogen.length > 0
                   ? `Variabel kalender model terpilih: ${result.variabel_eksogen.map((v) => LABEL_EKSOGEN[v] ?? v).join(', ')}.`
