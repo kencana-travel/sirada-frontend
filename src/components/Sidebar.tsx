@@ -1,7 +1,10 @@
 import { NavLink } from 'react-router-dom';
 import {
+  Database,
   FileBarChart2,
+  FileUp,
   LayoutDashboard,
+  LineChart,
   LogOut,
   Route,
   ReceiptText,
@@ -16,24 +19,33 @@ import { useAuth } from '../context/AuthContext';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/eksplorasi-data', label: 'Eksplorasi Data', icon: LineChart },
   { to: '/data-transaksi', label: 'Data Transaksi', icon: ReceiptText },
   { to: '/segmentasi', label: 'Segmentasi', icon: Users },
   { to: '/forecasting', label: 'Forecasting', icon: TrendingUp },
   { to: '/performa-rute', label: 'Performa Rute', icon: Route },
+  { to: '/laporan', label: 'Laporan', icon: FileBarChart2 },
 ];
 
-const adminNavItems = [{ to: '/kelola-pengguna', label: 'Kelola Pengguna', icon: UserCog }];
+const dataMasterItem = { to: '/data-master', label: 'Data Master', icon: Database };
+
+const adminNavItems = [
+  { to: '/import-data', label: 'Import Data', icon: FileUp },
+  { to: '/kelola-pengguna', label: 'Kelola Pengguna', icon: UserCog },
+];
 
 interface SidebarProps {
   open: boolean;
   onClose: () => void;
-  onLaporan: () => void;
 }
 
-export default function Sidebar({ open, onClose, onLaporan }: SidebarProps) {
+export default function Sidebar({ open, onClose }: SidebarProps) {
   const { user, role, signOut } = useAuth();
   const menu = [
     { judul: 'Menu Utama', items: navItems },
+    ...(role === 'Admin' || role === 'KepalaOutlet'
+      ? [{ judul: 'Data', items: [dataMasterItem] }]
+      : []),
     ...(role === 'Admin' ? [{ judul: 'Pengaturan', items: adminNavItems }] : []),
   ];
 
@@ -96,13 +108,6 @@ export default function Sidebar({ open, onClose, onLaporan }: SidebarProps) {
 
         {/* Bagian bawah — dipisah garis */}
         <div className="mt-auto space-y-1 border-t border-white/10 px-3 py-3">
-          <button
-            onClick={onLaporan}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-          >
-            <FileBarChart2 className="h-[18px] w-[18px]" />
-            Laporan
-          </button>
           <button
             onClick={signOut}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-red-500/20 hover:text-white"

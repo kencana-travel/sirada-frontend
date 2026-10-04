@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout';
-import ProtectedRoute, { AdminRoute } from './components/ProtectedRoute';
+import ProtectedRoute, { AdminRoute, RoleRoute } from './components/ProtectedRoute';
 import { useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Daftar from './pages/Daftar';
@@ -13,6 +13,10 @@ import DataTransaksi from './pages/DataTransaksi';
 import Segmentasi from './pages/Segmentasi';
 import Forecasting from './pages/Forecasting';
 import PerformaRute from './pages/PerformaRute';
+import EksplorasiData from './pages/EksplorasiData';
+import DataMaster from './pages/DataMaster';
+import ImportData from './pages/ImportData';
+import Laporan from './pages/Laporan';
 
 export default function App() {
   const { isAuthenticated } = useAuth();
@@ -44,6 +48,24 @@ export default function App() {
         <Route path="/segmentasi" element={<Segmentasi />} />
         <Route path="/forecasting" element={<Forecasting />} />
         <Route path="/performa-rute" element={<PerformaRute />} />
+        <Route path="/eksplorasi-data" element={<EksplorasiData />} />
+        <Route path="/laporan" element={<Laporan />} />
+        <Route
+          path="/data-master"
+          element={
+            <RoleRoute roles={['Admin', 'KepalaOutlet']}>
+              <DataMaster />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/import-data"
+          element={
+            <AdminRoute>
+              <ImportData />
+            </AdminRoute>
+          }
+        />
         <Route
           path="/kelola-pengguna"
           element={
