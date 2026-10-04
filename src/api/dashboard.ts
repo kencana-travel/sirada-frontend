@@ -3,6 +3,7 @@ import type {
   AktivitasTransaksi,
   DashboardSummary,
   DistribusiMemberItem,
+  TrenHarian,
 } from '../types';
 
 /* --- Bentuk respons mentah dari backend FastAPI --- */
@@ -15,6 +16,7 @@ interface DistribusiMemberRaw {
 
 interface AktivitasRaw {
   id_transaksi: string;
+  tanggal?: string;
   nama_pelanggan: string | null;
   nama_rute: string;
   jam_keberangkatan: string;
@@ -43,10 +45,17 @@ export async function getAktivitasTerkini(): Promise<AktivitasTransaksi[]> {
   const { data } = await api.get<AktivitasRaw[]>('/api/dashboard/aktivitas-terkini');
   return data.map((r) => ({
     kode_booking: r.id_transaksi,
+    tanggal: r.tanggal,
     nama_penumpang: r.nama_pelanggan ?? '-',
     jenis_member: r.jenis_member ?? '-',
     rute: r.nama_rute,
     jam_keberangkatan: r.jam_keberangkatan,
     total_bayar: r.total_bayar,
   }));
+}
+
+/** GET /api/dashboard/tren-penumpang — penumpang per hari untuk N hari terakhir yang ada datanya. */
+export async function getTrenPenumpang(hari = 14): Promise<TrenHarian[]> {
+  const { data } = await api.get<TrenHarian[]>('/api/dashboard/tren-penumpang', { params: { hari } });
+  return data;
 }

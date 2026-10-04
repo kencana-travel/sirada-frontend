@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Area,
   AreaChart,
@@ -22,26 +22,24 @@ import ProgressBar, { okupansiColor } from '../components/ProgressBar';
 import ErrorState from '../components/ErrorState';
 import { CenterSpinner } from '../components/Spinner';
 import { useAsync } from '../lib/useAsync';
-import { getAktivitasTerkini, getDistribusiMember, getSummary } from '../api/dashboard';
+import { getAktivitasTerkini, getDistribusiMember, getSummary, getTrenPenumpang } from '../api/dashboard';
 import { getPerformaRute } from '../api/performa';
+import { downloadTransaksiCsv } from '../api/transaksi';
+import { getErrorMessage } from '../api/client';
 import { formatCurrency, formatNumber, formatPercent } from '../lib/format';
 import { segmentColor } from '../lib/colors';
 import { useToast } from '../context/ToastContext';
-import type { AktivitasTransaksi, TrendPoint } from '../types';
+import type { AktivitasTransaksi } from '../types';
 
-function buildPreviewSeries(base: number): TrendPoint[] {
-  // Deret preview 8 titik: 5 aktual + 3 proyeksi (dipakai bila backend belum menyediakan).
-  const labels = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min', 'Sen'];
-  const factors = [0.82, 0.9, 0.86, 0.98, 1.05, 1.18, 1.24, 1.3];
-  const seed = base > 0 ? base / 30 : 120;
-  return labels.map((label, i) => {
-    const val = Math.round(seed * factors[i]);
-    return {
-      label,
-      aktual: i <= 4 ? val : null,
-      prediksi: i >= 4 ? val : null,
-    };
-  });
+const HARI_TREN = 14;
+
+function labelTanggal(iso: string) {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+}
+
+/** Tanggal pertama pada bulan dari tanggal ISO (YYYY-MM-DD). */
+function awalBulan(iso: string) {
+  return `${iso.slice(0, 7)}-01`;
 }
 
 export default function Dashboard() {
@@ -50,28 +48,52 @@ export default function Dashboard() {
   const distribusi = useAsync(getDistribusiMember, []);
   const aktivitas = useAsync(getAktivitasTerkini, []);
   const performa = useAsync(() => getPerformaRute(), []);
+  const tren = useAsync(() => getTrenPenumpang(HARI_TREN), []);
+  const [mengunduh, setMengunduh] = useState(false);
 
   const totalSegmen = useMemo(
     () => (distribusi.data ?? []).reduce((sum, s) => sum + s.jumlah, 0),
     [distribusi.data],
   );
 
-  const forecastSeries = useMemo<TrendPoint[]>(() => {
-    if (summary.data?.forecasting_deret?.length) return summary.data.forecasting_deret;
-    return buildPreviewSeries(summary.data?.total_transaksi ?? 0);
-  }, [summary.data]);
+  const trenSeries = useMemo(
+    () => (tren.data ?? []).map((t) => ({ label: labelTanggal(t.tanggal), penumpang: t.penumpang })),
+    [tren.data],
+  );
+  const tanggalTerakhir = tren.data?.length ? tren.data[tren.data.length - 1].tanggal : undefined;
 
-  const topOkupansi = useMemo(() => {
-    if (summary.data?.okupansi_rute?.length) {
-      return [...summary.data.okupansi_rute]
+  const topOkupansi = useMemo(
+    () =>
+      (performa.data ?? [])
+        .map((r) => ({ rute: r.rute, okupansi_persen: r.okupansi_persen }))
         .sort((a, b) => b.okupansi_persen - a.okupansi_persen)
-        .slice(0, 3);
+        .slice(0, 3),
+    [performa.data],
+  );
+
+  const okupansiRuteTerlaris = useMemo(
+    () => (performa.data ?? []).find((r) => r.rute === summary.data?.rute_terlaris)?.okupansi_persen,
+    [performa.data, summary.data],
+  );
+
+  /** Unduh CSV transaksi pada bulan terakhir yang ada datanya (Kepala Outlet: cabangnya saja). */
+  const unduhBulanTerakhir = async () => {
+    if (!tanggalTerakhir) return;
+    setMengunduh(true);
+    try {
+      const mulai = awalBulan(tanggalTerakhir);
+      const cabang = summary.data?.cabang;
+      await downloadTransaksiCsv(
+        { tanggal_mulai: mulai, tanggal_selesai: tanggalTerakhir },
+        `transaksi_${tanggalTerakhir.slice(0, 7)}${cabang ? `_${cabang.toLowerCase()}` : ''}.csv`,
+      );
+      toast.success(`Transaksi ${labelTanggal(mulai)} – ${labelTanggal(tanggalTerakhir)} berhasil diunduh.`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Gagal mengunduh transaksi.'));
+    } finally {
+      setMengunduh(false);
     }
-    return (performa.data ?? [])
-      .map((r) => ({ rute: r.rute, okupansi_persen: r.okupansi_persen }))
-      .sort((a, b) => b.okupansi_persen - a.okupansi_persen)
-      .slice(0, 3);
-  }, [summary.data, performa.data]);
+  };
 
   const allColumns: Column<AktivitasTransaksi>[] = [
     {
@@ -101,7 +123,16 @@ export default function Dashboard() {
         </div>
       ),
     },
-    { key: 'jam_keberangkatan', header: 'Jam Berangkat', render: (r) => <span className="tabular-nums">{r.jam_keberangkatan}</span> },
+    {
+      key: 'jam_keberangkatan',
+      header: 'Keberangkatan',
+      render: (r) => (
+        <span className="tabular-nums">
+          {r.tanggal && <span className="text-slate-400">{labelTanggal(r.tanggal)} · </span>}
+          {r.jam_keberangkatan}
+        </span>
+      ),
+    },
     {
       key: 'total_bayar',
       header: 'Total Bayar',
@@ -129,16 +160,27 @@ export default function Dashboard() {
   return (
     <div>
       <PageHeader
-        badge={{ label: 'Ringkasan Operasional', tone: 'maroon', dot: true }}
+        badge={{
+          label: s?.cabang ? `Ringkasan Cabang ${s.cabang}` : 'Ringkasan Operasional',
+          tone: 'maroon',
+          dot: true,
+        }}
         title="Dashboard Analitik"
-        subtitle="Pantau performa transaksi, segmentasi, dan okupansi rute secara real-time."
+        subtitle={
+          s?.cabang
+            ? `Pantau transaksi, segmentasi, dan okupansi rute yang berangkat dari cabang ${s.cabang}.`
+            : 'Pantau performa transaksi, segmentasi, dan okupansi rute seluruh cabang.'
+        }
         actions={
           <Button
             variant="outline"
             leftIcon={<Download className="h-4 w-4" />}
-            onClick={() => toast.success('Ringkasan bulanan sedang diunduh...')}
+            loading={mengunduh}
+            disabled={!tanggalTerakhir}
+            onClick={unduhBulanTerakhir}
+            title="Unduh CSV transaksi pada bulan terakhir yang ada datanya"
           >
-            Download Ringkasan Bulanan
+            Unduh Transaksi Bulan Terakhir
           </Button>
         }
       />
@@ -169,9 +211,9 @@ export default function Dashboard() {
             title="Rute Terlaris"
             value={<span className="text-xl">{s?.rute_terlaris ?? '—'}</span>}
             badge={
-              s?.rute_terlaris_okupansi_persen !== undefined ? (
-                <Badge tone={okupansiColor(s.rute_terlaris_okupansi_persen) === 'green' ? 'green' : 'amber'}>
-                  Okupansi {formatPercent(s.rute_terlaris_okupansi_persen, 0)}
+              okupansiRuteTerlaris !== undefined ? (
+                <Badge tone={okupansiColor(okupansiRuteTerlaris) === 'green' ? 'green' : 'amber'}>
+                  Okupansi {formatPercent(okupansiRuteTerlaris, 0)}
                 </Badge>
               ) : undefined
             }
@@ -244,18 +286,25 @@ export default function Dashboard() {
           )}
         </Card>
 
-        {/* Forecasting mini */}
+        {/* Tren penumpang harian (data aktual) */}
         <Card
-          title="Forecasting Penumpang"
-          subtitle="Aktual vs proyeksi 7 hari"
-          action={<Badge tone="purple" dot>AI MODEL</Badge>}
+          title="Tren Penumpang Harian"
+          subtitle={
+            tanggalTerakhir
+              ? `${HARI_TREN} hari terakhir data · s.d. ${labelTanggal(tanggalTerakhir)}`
+              : `${HARI_TREN} hari terakhir data`
+          }
         >
           <div className="h-48 w-full">
-            {summary.loading ? (
+            {tren.loading ? (
               <CenterSpinner />
+            ) : tren.error ? (
+              <ErrorState message={tren.error} onRetry={tren.reload} compact />
+            ) : trenSeries.length === 0 ? (
+              <p className="py-16 text-center text-sm text-slate-400">Belum ada data penumpang.</p>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={forecastSeries} margin={{ top: 8, right: 6, left: -18, bottom: 0 }}>
+                <AreaChart data={trenSeries} margin={{ top: 8, right: 6, left: -12, bottom: 0 }}>
                   <defs>
                     <linearGradient id="dashActual" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#7A1F2B" stopOpacity={0.3} />
@@ -263,40 +312,21 @@ export default function Dashboard() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#EEF0F2" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} width={40} />
-                  <Tooltip formatter={(v: number) => formatNumber(v)} />
-                  <Area
-                    type="monotone"
-                    dataKey="aktual"
-                    stroke="#7A1F2B"
-                    strokeWidth={2.5}
-                    fill="url(#dashActual)"
-                    connectNulls
-                    name="Aktual"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="prediksi"
-                    stroke="#7C3AED"
-                    strokeWidth={2.5}
-                    strokeDasharray="5 4"
-                    fill="none"
-                    connectNulls
-                    name="Proyeksi"
-                  />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} minTickGap={12} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} width={44} />
+                  <Tooltip formatter={(v: number) => [formatNumber(v), 'Penumpang']} />
+                  <Area type="monotone" dataKey="penumpang" stroke="#7A1F2B" strokeWidth={2.5} fill="url(#dashActual)" name="Penumpang" />
                 </AreaChart>
               </ResponsiveContainer>
             )}
           </div>
-          <div className="mt-3 flex items-center justify-center gap-5 text-xs text-slate-500">
-            <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-maroon-700" />Aktual</span>
-            <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full border border-dashed border-purple-500 bg-purple-100" />Proyeksi</span>
-          </div>
+          <p className="mt-3 text-center text-xs text-slate-500">
+            Jumlah penumpang per hari. Prediksi tersedia di menu Forecasting.
+          </p>
         </Card>
 
         {/* Okupansi ranking */}
-        <Card title="Performa Okupansi Rute" subtitle="Peringkat 3 rute teratas">
+        <Card title="Performa Okupansi Rute" subtitle="Peringkat 3 rute teratas (rata-rata per trip)">
           {performa.loading ? (
             <CenterSpinner />
           ) : topOkupansi.length === 0 ? (

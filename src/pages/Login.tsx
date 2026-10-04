@@ -21,9 +21,9 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
 const floatingCards = [
-  { icon: TrendingUp, title: 'Peramalan Akurat', desc: 'Prediksi demand berbasis AI', badge: '94,2%', tone: 'emerald' },
-  { icon: MapPin, title: 'Real-time Route Tracking', desc: 'Pantau okupansi tiap koridor', badge: '18 Rute', tone: 'sky' },
-  { icon: Users, title: 'Segmentasi Member Dinamis', desc: 'Klasterisasi loyalitas otomatis', badge: '4 Tier', tone: 'amber' },
+  { icon: TrendingUp, title: 'Forecasting Demand', desc: 'Perbandingan ARIMA, SARIMA, SARIMAX & Holt-Winters', badge: 'MAPE terkecil', tone: 'emerald' },
+  { icon: MapPin, title: 'Performa Rute & Cabang', desc: 'Okupansi, penumpang & pendapatan per rute', badge: '6 Rute', tone: 'sky' },
+  { icon: Users, title: 'Segmentasi Pelanggan', desc: 'RFM + K-Means dengan evaluasi Silhouette & DBI', badge: 'RFM', tone: 'amber' },
 ];
 
 const badgeTone: Record<string, string> = {
@@ -214,14 +214,7 @@ export default function Login() {
         <div className="relative flex h-full flex-col justify-between p-10 xl:p-14">
           <div className="flex flex-wrap items-center gap-3">
             <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white ring-1 ring-inset ring-white/20">
-              Sistem Intelijen Perjalanan Terpadu
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-100 ring-1 ring-inset ring-emerald-300/30">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-              </span>
-              SERVER SINKRON AKTIF
+              Sistem Informasi Rute dan Demand Analitik
             </span>
           </div>
 

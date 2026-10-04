@@ -89,6 +89,9 @@ export interface DashboardSummary {
   rasio_member_persen: number; // % transaksi yang berasal dari member
   rasio_member_perubahan_persen?: number;
 
+  /** Nama cabang bila data dibatasi untuk Kepala Outlet; null = semua cabang. */
+  cabang?: string | null;
+
   // Opsional — dipakai untuk panel mini di dashboard bila tersedia.
   forecasting_deret?: TrendPoint[];
   okupansi_rute?: OkupansiRute[];
@@ -100,6 +103,14 @@ export interface DistribusiMemberItem {
   persen?: number;
 }
 
+/** Satu titik tren harian penumpang (GET /api/dashboard/tren-penumpang). */
+export interface TrenHarian {
+  tanggal: string;
+  penumpang: number;
+  transaksi: number;
+  pendapatan: number;
+}
+
 export interface OkupansiRute {
   rute: string;
   okupansi_persen: number;
@@ -107,6 +118,7 @@ export interface OkupansiRute {
 
 export interface AktivitasTransaksi {
   kode_booking: string;
+  tanggal?: string;
   nama_penumpang: string;
   jenis_member: string; // "Member Mahasiswa" | "Member Umum" | "Non-Member"
   rute: string;
@@ -136,9 +148,8 @@ export interface TransaksiListResponse {
   total: number;
   halaman: number;
   per_halaman: number;
-  // ringkasan opsional untuk kartu kanan atas
-  total_hari_ini?: number;
-  omset_terverifikasi?: number;
+  /** Total pendapatan (total_bayar) seluruh transaksi yang cocok dengan filter. */
+  total_pendapatan?: number;
 }
 
 export interface TransaksiQuery {
@@ -146,6 +157,8 @@ export interface TransaksiQuery {
   rute?: string;
   layanan?: string;
   channel?: string;
+  tanggal_mulai?: string;
+  tanggal_selesai?: string;
   halaman?: number;
   per_halaman?: number;
 }

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
-  CalendarCheck,
+  Download,
   Globe,
   Plus,
+  ReceiptText,
   RefreshCw,
   Search,
   Smartphone,
@@ -22,8 +24,9 @@ import ErrorState from '../components/ErrorState';
 import TambahTransaksiModal from '../components/TambahTransaksiModal';
 import { useAsync } from '../lib/useAsync';
 import { useDebounce } from '../lib/useDebounce';
-import { getTransaksi } from '../api/transaksi';
-import { getRuteTersedia } from '../api/forecasting';
+import { downloadTransaksiCsv, getTransaksi } from '../api/transaksi';
+import { getRuteMaster } from '../api/master';
+import { getErrorMessage } from '../api/client';
 import { formatCurrency, formatNumber } from '../lib/format';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -33,6 +36,7 @@ import type { Transaksi } from '../types';
 const LAYANAN = ['VIP', 'Reguler'];
 const CHANNEL = ['Aplikasi', 'Outlet'];
 const PER_HALAMAN = 10;
+const BATAS_EXPORT = 50000;
 
 function ChannelCell({ channel }: { channel: string }) {
   const v = channel.toLowerCase();
@@ -51,34 +55,68 @@ const selectClass =
 export default function DataTransaksi() {
   const { canWrite } = useAuth();
   const toast = useToast();
+  const navigate = useNavigate();
 
   const [searchInput, setSearchInput] = useState('');
   const cari = useDebounce(searchInput, 400);
   const [rute, setRute] = useState('');
   const [layanan, setLayanan] = useState('');
   const [channel, setChannel] = useState('');
+  const [tanggalMulai, setTanggalMulai] = useState('');
+  const [tanggalSelesai, setTanggalSelesai] = useState('');
   const [halaman, setHalaman] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
+  const [mengekspor, setMengekspor] = useState(false);
 
   // Reset ke halaman 1 setiap kali filter berubah.
   useEffect(() => {
     setHalaman(1);
-  }, [cari, rute, layanan, channel]);
+  }, [cari, rute, layanan, channel, tanggalMulai, tanggalSelesai]);
 
-  const query = useMemo(
-    () => ({ cari, rute, layanan, channel, halaman, per_halaman: PER_HALAMAN }),
-    [cari, rute, layanan, channel, halaman],
+  const rentangSalah = Boolean(tanggalMulai && tanggalSelesai && tanggalMulai > tanggalSelesai);
+  const filter = useMemo(
+    () => ({
+      cari,
+      rute,
+      layanan,
+      channel,
+      tanggal_mulai: rentangSalah ? undefined : tanggalMulai,
+      tanggal_selesai: rentangSalah ? undefined : tanggalSelesai,
+    }),
+    [cari, rute, layanan, channel, tanggalMulai, tanggalSelesai, rentangSalah],
   );
+  const query = useMemo(() => ({ ...filter, halaman, per_halaman: PER_HALAMAN }), [filter, halaman]);
 
-  const { data, loading, error, reload } = useAsync(() => getTransaksi(query), [
-    cari,
-    rute,
-    layanan,
-    channel,
-    halaman,
-  ]);
+  const { data, loading, error, reload } = useAsync(() => getTransaksi(query), [query]);
 
-  const ruteOptions = useAsync(getRuteTersedia, []);
+  // Kepala Outlet hanya menerima rute yang berangkat dari cabangnya.
+  const ruteOptions = useAsync(getRuteMaster, []);
+  const adaFilter = Boolean(cari || rute || layanan || channel || tanggalMulai || tanggalSelesai);
+
+  const resetFilter = () => {
+    setSearchInput('');
+    setRute('');
+    setLayanan('');
+    setChannel('');
+    setTanggalMulai('');
+    setTanggalSelesai('');
+  };
+
+  const exportCsv = async () => {
+    setMengekspor(true);
+    try {
+      await downloadTransaksiCsv(filter);
+      toast.success(
+        (data?.total ?? 0) > BATAS_EXPORT
+          ? `CSV diunduh (dibatasi ${formatNumber(BATAS_EXPORT)} transaksi terbaru sesuai filter).`
+          : 'CSV transaksi sesuai filter berhasil diunduh.',
+      );
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Gagal mengekspor transaksi.'));
+    } finally {
+      setMengekspor(false);
+    }
+  };
 
   const columns: Column<Transaksi>[] = [
     {
@@ -134,13 +172,11 @@ export default function DataTransaksi() {
             <Card className="!shadow-none" bodyClassName="!p-3">
               <div className="flex items-center gap-2.5">
                 <span className="grid h-9 w-9 place-items-center rounded-lg bg-blue-50 text-blue-600">
-                  <CalendarCheck className="h-4 w-4" />
+                  <ReceiptText className="h-4 w-4" />
                 </span>
                 <div className="leading-tight">
-                  <div className="text-[11px] text-slate-400">Total Hari Ini</div>
-                  <div className="text-lg font-bold tabular-nums text-slate-900">
-                    {formatNumber(data?.total_hari_ini ?? 0)}
-                  </div>
+                  <div className="text-[11px] text-slate-400">{adaFilter ? 'Transaksi (Filter)' : 'Total Transaksi'}</div>
+                  <div className="text-lg font-bold tabular-nums text-slate-900">{formatNumber(data?.total ?? 0)}</div>
                 </div>
               </div>
             </Card>
@@ -150,9 +186,9 @@ export default function DataTransaksi() {
                   <Wallet className="h-4 w-4" />
                 </span>
                 <div className="leading-tight">
-                  <div className="text-[11px] text-slate-400">Omset Terverifikasi</div>
+                  <div className="text-[11px] text-slate-400">{adaFilter ? 'Pendapatan (Filter)' : 'Total Pendapatan'}</div>
                   <div className="text-lg font-bold tabular-nums text-slate-900">
-                    {formatCurrency(data?.omset_terverifikasi ?? 0, { compact: true })}
+                    {formatCurrency(data?.total_pendapatan ?? 0, { compact: true })}
                   </div>
                 </div>
               </div>
@@ -177,8 +213,8 @@ export default function DataTransaksi() {
           <select value={rute} onChange={(e) => setRute(e.target.value)} className={selectClass}>
             <option value="">Semua Rute</option>
             {(ruteOptions.data ?? []).map((r) => (
-              <option key={r} value={r}>
-                {r}
+              <option key={r.id_rute} value={r.nama_rute}>
+                {r.nama_rute}
               </option>
             ))}
           </select>
@@ -201,17 +237,48 @@ export default function DataTransaksi() {
             ))}
           </select>
 
-          <Button variant="outline" size="md" onClick={reload} aria-label="Muat ulang" className="!px-2.5">
+          <input
+            type="date"
+            value={tanggalMulai}
+            onChange={(e) => setTanggalMulai(e.target.value)}
+            className={selectClass}
+            aria-label="Tanggal mulai"
+            title="Tanggal mulai"
+          />
+          <span className="text-xs text-slate-400">s.d.</span>
+          <input
+            type="date"
+            value={tanggalSelesai}
+            onChange={(e) => setTanggalSelesai(e.target.value)}
+            className={selectClass}
+            aria-label="Tanggal selesai"
+            title="Tanggal selesai"
+          />
+
+          {adaFilter && (
+            <Button variant="ghost" onClick={resetFilter}>
+              Reset
+            </Button>
+          )}
+
+          <Button variant="outline" onClick={reload} aria-label="Muat ulang" title="Muat ulang" className="!px-2.5">
             <RefreshCw className="h-4 w-4" />
+          </Button>
+
+          <Button
+            variant="outline"
+            leftIcon={<Download className="h-4 w-4" />}
+            loading={mengekspor}
+            disabled={!data?.total}
+            onClick={exportCsv}
+            title="Unduh CSV sesuai filter aktif"
+          >
+            Export CSV
           </Button>
 
           {canWrite && (
             <>
-              <Button
-                variant="outline"
-                leftIcon={<Upload className="h-4 w-4" />}
-                onClick={() => toast.info('Pilih berkas CSV untuk diimpor (demo).')}
-              >
+              <Button variant="outline" leftIcon={<Upload className="h-4 w-4" />} onClick={() => navigate('/import-data')}>
                 Import CSV
               </Button>
               <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setModalOpen(true)}>
@@ -220,6 +287,12 @@ export default function DataTransaksi() {
             </>
           )}
         </div>
+
+        {rentangSalah && (
+          <p className="border-b border-hairline bg-red-50 px-4 py-2 text-xs text-red-600">
+            Tanggal mulai harus sebelum tanggal selesai — filter tanggal diabaikan.
+          </p>
+        )}
 
         {error ? (
           <div className="p-5">

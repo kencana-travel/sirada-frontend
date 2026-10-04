@@ -11,19 +11,20 @@ import {
   YAxis,
 } from 'recharts';
 import {
-  ArrowDownRight,
-  ArrowUpRight,
   BusFront,
+  CalendarDays,
+  CheckCircle2,
   Gauge,
-  Lightbulb,
+  Layers,
   Lock,
   Play,
   Target,
   TrendingUp,
+  XCircle,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
-import Badge from '../components/Badge';
+import Badge, { type BadgeTone } from '../components/Badge';
 import Button from '../components/Button';
 import Table, { type Column } from '../components/Table';
 import ProgressBar, { loadFactorColor } from '../components/ProgressBar';
@@ -35,7 +36,12 @@ import { getErrorMessage } from '../api/client';
 import { formatNumber, formatPercent } from '../lib/format';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import type { ForecastDeretPoint, ForecastRunResponse, MatriksMuatanRute } from '../types';
+import type {
+  ForecastDeretPoint,
+  ForecastRunResponse,
+  KategoriMape,
+  PerbandinganModel,
+} from '../types/forecasting';
 
 const HORIZON = [7, 14, 30];
 const VIEWS = [
@@ -45,6 +51,21 @@ const VIEWS = [
 ] as const;
 
 type ViewMode = (typeof VIEWS)[number]['value'];
+
+/** Warna badge kategori MAPE menurut Lewis (1982). */
+const KATEGORI_TONE: Record<KategoriMape, BadgeTone> = {
+  'Sangat baik': 'green',
+  Baik: 'blue',
+  Layak: 'amber',
+  Buruk: 'red',
+};
+
+const LABEL_EKSOGEN: Record<string, string> = {
+  weekend: 'akhir pekan',
+  libur_nasional: 'libur nasional',
+  sekitar_libur: 'H-1/H+1 libur nasional',
+  libur_sekolah: 'libur sekolah',
+};
 
 function aggregate(deret: ForecastDeretPoint[], view: ViewMode): ForecastDeretPoint[] {
   if (view === 'harian' || deret.length === 0) return deret;
@@ -68,8 +89,8 @@ export default function Forecasting() {
   const toast = useToast();
 
   const [rute, setRute] = useState('');
-  const [horizon, setHorizon] = useState(7);
-  const [libur, setLibur] = useState(false);
+  const [horizon, setHorizon] = useState(30);
+  const [pakaiKalender, setPakaiKalender] = useState(true);
   const [view, setView] = useState<ViewMode>('harian');
   const [result, setResult] = useState<ForecastRunResponse | null>(null);
   const [running, setRunning] = useState(false);
@@ -83,14 +104,18 @@ export default function Forecasting() {
   }, [ruteOptions.data, rute]);
 
   const run = useCallback(
-    async (r: string, h: number, l: boolean) => {
+    async (r: string, h: number, kalender: boolean) => {
       if (!r) return;
       setRunning(true);
       setError(null);
       try {
-        const res = await runForecast({ rute: r, horizon_hari: h, libur_akhir_pekan: l });
+        const res = await runForecast({ rute: r, horizon_hari: h, pakai_kalender: kalender });
         setResult(res);
-        toast.success('Model AI selesai dijalankan.');
+        toast.success(
+          res.dari_cache
+            ? `Hasil ${res.model} diambil dari cache (data belum berubah).`
+            : `Model terpilih: ${res.model} (${formatNumber(res.durasi_detik)} detik).`,
+        );
       } catch (err) {
         const msg = getErrorMessage(err, 'Gagal menjalankan model forecasting.');
         setError(msg);
@@ -107,9 +132,9 @@ export default function Forecasting() {
   useEffect(() => {
     if (canWrite && rute && !ranOnce.current) {
       ranOnce.current = true;
-      run(rute, horizon, libur);
+      run(rute, horizon, pakaiKalender);
     }
-  }, [canWrite, rute, horizon, libur, run]);
+  }, [canWrite, rute, horizon, pakaiKalender, run]);
 
   const chartData = useMemo(() => aggregate(result?.deret ?? [], view), [result?.deret, view]);
 
@@ -123,26 +148,35 @@ export default function Forecasting() {
     return best;
   }, [chartData, view]);
 
-  const up = (result?.prediksi_tren_persen ?? 0) >= 0;
-
-  const matriksColumns: Column<MatriksMuatanRute>[] = [
-    { key: 'rute', header: 'Rute', render: (r) => <span className="font-semibold text-slate-800">{r.rute}</span> },
-    { key: 'kapasitas_tersedia', header: 'Kapasitas', align: 'right', render: (r) => <span className="tabular-nums">{formatNumber(r.kapasitas_tersedia)}</span> },
-    { key: 'prediksi_penumpang', header: 'Prediksi Penumpang', align: 'right', render: (r) => <span className="font-semibold tabular-nums">{formatNumber(r.prediksi_penumpang)}</span> },
+  const perbandinganColumns: Column<PerbandinganModel>[] = [
     {
-      key: 'load_factor',
-      header: 'Estimasi Load Factor',
+      key: 'model',
+      header: 'Model',
       render: (r) => (
         <div className="flex items-center gap-2">
-          <ProgressBar value={r.load_factor_persen} color={loadFactorColor(r.load_factor_persen)} height="sm" className="min-w-[80px]" />
-          <span className="w-12 text-right text-xs font-semibold tabular-nums text-slate-700">{formatPercent(r.load_factor_persen, 0)}</span>
+          <span className={r.terpilih ? 'font-semibold text-maroon-700' : 'text-slate-700'}>{r.model}</span>
+          {r.terpilih && (
+            <Badge tone="maroon" size="sm">
+              Terpilih
+            </Badge>
+          )}
         </div>
       ),
     },
+    { key: 'mae', header: 'MAE', align: 'right', render: (r) => <span className="tabular-nums">{formatNumber(r.mae)}</span> },
+    { key: 'rmse', header: 'RMSE', align: 'right', render: (r) => <span className="tabular-nums">{formatNumber(r.rmse)}</span> },
     {
-      key: 'rekomendasi_armada',
-      header: 'Rekomendasi Armada',
-      render: (r) => <Badge tone={r.load_factor_persen >= 85 ? 'red' : r.load_factor_persen >= 70 ? 'amber' : 'blue'}>{r.rekomendasi_armada}</Badge>,
+      key: 'mape_persen',
+      header: 'MAPE',
+      align: 'right',
+      render: (r) => (
+        <span className={`tabular-nums ${r.terpilih ? 'font-semibold text-slate-900' : ''}`}>{formatPercent(r.mape_persen, 2)}</span>
+      ),
+    },
+    {
+      key: 'kategori_mape',
+      header: 'Kategori (Lewis)',
+      render: (r) => <Badge tone={KATEGORI_TONE[r.kategori_mape]}>{r.kategori_mape}</Badge>,
     },
   ];
 
@@ -152,13 +186,15 @@ export default function Forecasting() {
   return (
     <div>
       <PageHeader
-        badge={{ label: 'Predictive Intelligence Engine', tone: 'purple', dot: true }}
+        badge={{ label: 'Forecasting Deret Waktu', tone: 'purple', dot: true }}
         title="Forecasting Demand & Prediksi Muatan Armada"
-        subtitle="Proyeksikan permintaan penumpang dan optimalkan alokasi armada per koridor."
+        subtitle="Bandingkan ARIMA, SARIMA, SARIMAX dan Holt-Winters per koridor, lalu pakai model dengan MAPE terkecil."
         actions={
-          <Badge tone="green" dot>
-            Model Status: Real-time Calibrated
-          </Badge>
+          result ? (
+            <Badge tone={result.valid ? 'green' : 'amber'} dot>
+              {result.valid ? 'Model valid' : 'Model belum valid'} · MAPE {formatPercent(result.mape_persen, 1)}
+            </Badge>
+          ) : undefined
         }
       />
 
@@ -186,19 +222,22 @@ export default function Forecasting() {
               ))}
             </select>
           </div>
-          <label className="flex h-10 items-center gap-2.5 rounded-lg border border-hairline px-3 text-sm text-slate-600">
+          <label
+            className="flex h-10 items-center gap-2.5 rounded-lg border border-hairline px-3 text-sm text-slate-600"
+            title="Tambahkan akhir pekan, libur nasional (termasuk H-1/H+1) dan libur sekolah dari tabel kalender sebagai variabel eksogen (model SARIMAX)."
+          >
             <input
               type="checkbox"
-              checked={libur}
-              onChange={(e) => setLibur(e.target.checked)}
+              checked={pakaiKalender}
+              onChange={(e) => setPakaiKalender(e.target.checked)}
               disabled={!canWrite}
               className="h-4 w-4 rounded border-slate-300 text-maroon-700 focus:ring-maroon-500 disabled:opacity-50"
             />
-            Libur Panjang &amp; Akhir Pekan
+            Pertimbangkan kalender libur (SARIMAX)
           </label>
           {canWrite ? (
-            <Button leftIcon={<Play className="h-4 w-4" />} loading={running} onClick={() => run(rute, horizon, libur)}>
-              Jalankan Model AI
+            <Button leftIcon={<Play className="h-4 w-4" />} loading={running} onClick={() => run(rute, horizon, pakaiKalender)}>
+              Jalankan Model
             </Button>
           ) : (
             <div className="text-xs text-slate-400">
@@ -210,11 +249,11 @@ export default function Forecasting() {
 
       {error && !result ? (
         <Card>
-          <ErrorState message={error} onRetry={() => run(rute, horizon, libur)} />
+          <ErrorState message={error} onRetry={() => run(rute, horizon, pakaiKalender)} />
         </Card>
       ) : running && !result ? (
         <Card>
-          <CenterSpinner label="Menjalankan model prediksi..." />
+          <CenterSpinner label="Membandingkan model prediksi (bisa sampai ±30 detik)..." />
         </Card>
       ) : result ? (
         <>
@@ -222,43 +261,43 @@ export default function Forecasting() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Card>
               <div className="flex items-start justify-between">
-                <p className="text-sm font-medium text-slate-500">Prediksi Demand Periode Berikutnya</p>
+                <p className="text-sm font-medium text-slate-500">Prediksi Demand {result.horizon_hari} Hari ke Depan</p>
                 <span className="grid h-10 w-10 place-items-center rounded-lg bg-maroon-50 text-maroon-700"><TrendingUp className="h-5 w-5" /></span>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
                 <span className="text-4xl font-extrabold tabular-nums text-slate-900">{formatNumber(result.prediksi_periode_berikutnya)}</span>
                 <span className="text-sm text-slate-400">pax</span>
               </div>
-              {result.prediksi_tren_persen !== undefined && (
-                <span className={`mt-2 inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs font-semibold ${up ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                  {up ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
-                  {formatPercent(Math.abs(result.prediksi_tren_persen), 1)} vs periode lalu
-                </span>
-              )}
+              <p className="mt-2 text-xs text-slate-400">
+                Rata-rata <span className="font-semibold text-slate-600">{formatNumber(result.kapasitas.prediksi_rata_harian)}</span> pax/hari ·
+                puncak <span className="font-semibold text-slate-600">{formatNumber(result.kapasitas.prediksi_puncak_harian)}</span> pax (
+                {result.kapasitas.tanggal_puncak})
+              </p>
             </Card>
 
             <Card>
               <div className="flex items-start justify-between">
-                <p className="text-sm font-medium text-slate-500">Tingkat Akurasi Model AI</p>
+                <p className="text-sm font-medium text-slate-500">Akurasi Model (data uji {result.hari_uji} hari)</p>
                 <span className="grid h-10 w-10 place-items-center rounded-lg bg-green-50 text-green-600"><Target className="h-5 w-5" /></span>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-4xl font-extrabold tabular-nums text-slate-900">{formatPercent(result.akurasi_persen, 1)}</span>
+                <span className="text-4xl font-extrabold tabular-nums text-slate-900">{formatPercent(result.mape_persen, 2)}</span>
+                <span className="text-sm text-slate-400">MAPE</span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <Badge tone={KATEGORI_TONE[result.kategori_mape]}>{result.kategori_mape}</Badge>
+                <Badge tone={result.valid ? 'green' : 'red'}>
+                  {result.valid ? <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> : <XCircle className="mr-1 h-3.5 w-3.5" />}
+                  {result.valid ? 'Valid' : 'Tidak valid'} (MAPE ≤ {formatPercent(result.mape_maks_valid, 0)})
+                </Badge>
               </div>
               <p className="mt-2 text-xs text-slate-400">
-                MAPE <span className="font-semibold text-slate-600">{formatPercent(result.mape_persen, 2)}</span>
-                {result.mae !== undefined && (
-                  <> · MAE <span className="font-semibold text-slate-600">{formatNumber(result.mae)}</span></>
-                )}
-                {result.rmse !== undefined && (
-                  <> · RMSE <span className="font-semibold text-slate-600">{formatNumber(result.rmse)}</span></>
-                )}
+                MAE <span className="font-semibold text-slate-600">{formatNumber(result.mae)}</span> · RMSE{' '}
+                <span className="font-semibold text-slate-600">{formatNumber(result.rmse)}</span> pax/hari
               </p>
-              {result.model && (
-                <p className="mt-1 text-xs text-slate-400">
-                  Model <span className="font-semibold text-slate-600">{result.model}</span>
-                </p>
-              )}
+              <p className="mt-1 text-xs text-slate-400">
+                Model <span className="font-semibold text-slate-600">{result.model}</span>
+              </p>
             </Card>
 
             <Card>
@@ -268,9 +307,9 @@ export default function Forecasting() {
               </div>
               <div className="mt-3 flex items-baseline gap-2">
                 <span className="text-4xl font-extrabold tabular-nums text-slate-900">+{formatNumber(result.rekomendasi_unit_tambahan)}</span>
-                <span className="text-sm text-slate-400">unit</span>
+                <span className="text-sm text-slate-400">perjalanan/hari puncak</span>
               </div>
-              <p className="mt-2 text-xs text-slate-400">{result.catatan_jadwal ?? 'Fokuskan pada jadwal keberangkatan puncak.'}</p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-500">{result.catatan_jadwal}</p>
             </Card>
           </div>
 
@@ -278,7 +317,7 @@ export default function Forecasting() {
           <Card
             className="mt-4"
             title="Proyeksi Demand: Aktual vs Prediksi"
-            subtitle={`Koridor ${rute || '—'} · horizon ${horizon} hari`}
+            subtitle={`Koridor ${result.rute} · horizon ${result.horizon_hari} hari · ${result.model}`}
             action={
               <div className="flex rounded-lg border border-hairline bg-white p-0.5">
                 {VIEWS.map((v) => (
@@ -320,27 +359,72 @@ export default function Forecasting() {
             </div>
           </Card>
 
-          {/* ===== TEMUAN POLA ===== */}
-          {result.temuan_pola && (
-            <Card className="mt-4" icon={<Lightbulb className="h-5 w-5" />} title="Temuan Pola">
-              <p className="text-sm leading-relaxed text-slate-600">{result.temuan_pola}</p>
-            </Card>
-          )}
-
-          {/* ===== MATRIKS PREDIKSI ===== */}
+          {/* ===== PERBANDINGAN MODEL ===== */}
           <Card
             className="mt-4"
-            title="Matriks Prediksi Muatan & Alokasi Per Rute"
-            subtitle="Estimasi load factor dan rekomendasi armada"
-            icon={<Gauge className="h-5 w-5" />}
+            title="Perbandingan Model"
+            subtitle={`Dievaluasi pada ${result.hari_uji} hari terakhir; model dengan MAPE terkecil dipakai untuk prediksi`}
+            icon={<Layers className="h-5 w-5" />}
             noPadding
           >
             <Table
-              columns={matriksColumns}
-              data={result.matriks ?? []}
-              keyField={(r) => r.rute}
-              emptyMessage="Belum ada matriks prediksi untuk ditampilkan."
+              columns={perbandinganColumns}
+              data={result.perbandingan}
+              keyField={(r) => r.model}
+              emptyMessage="Tidak ada model yang berhasil dilatih."
             />
+            <p className="border-t border-hairline px-5 py-3 text-xs leading-relaxed text-slate-400">
+              Data latih {result.jendela_latih_hari} hari ({result.periode_data.mulai} s.d. {result.periode_data.selesai}), uji ADF
+              p-value {result.adf_p_value} (d = {result.ordo_differencing}).{' '}
+              {result.pakai_kalender
+                ? result.variabel_eksogen.length > 0
+                  ? `Variabel kalender model terpilih: ${result.variabel_eksogen.map((v) => LABEL_EKSOGEN[v] ?? v).join(', ')}.`
+                  : 'Kalender libur diikutkan sebagai kandidat SARIMAX.'
+                : 'Kalender libur tidak dipakai (SARIMAX tidak diikutkan).'}{' '}
+              Kategori MAPE menurut Lewis (1982): &lt;10% sangat baik, 10–20% baik, 20–50% layak, &gt;50% buruk.
+            </p>
+          </Card>
+
+          {/* ===== KAPASITAS ===== */}
+          <Card
+            className="mt-4"
+            title="Prediksi Muatan vs Kapasitas Jadwal"
+            subtitle={`Kapasitas dari rata-rata 90 hari terakhir · target load factor ${formatPercent(result.kapasitas.target_load_factor_persen, 0)}`}
+            icon={<Gauge className="h-5 w-5" />}
+          >
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div>
+                <p className="text-xs text-slate-500">Perjalanan/hari</p>
+                <p className="text-lg font-bold tabular-nums text-slate-800">{formatNumber(result.kapasitas.perjalanan_per_hari)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Kursi/hari</p>
+                <p className="text-lg font-bold tabular-nums text-slate-800">
+                  {formatNumber(result.kapasitas.kursi_per_hari)}
+                  <span className="ml-1 text-xs font-normal text-slate-400">
+                    ({formatNumber(result.kapasitas.kapasitas_per_perjalanan)} kursi/unit)
+                  </span>
+                </p>
+              </div>
+              {[
+                { label: 'Load factor rata-rata', value: result.kapasitas.load_factor_rata_persen },
+                { label: 'Load factor hari puncak', value: result.kapasitas.load_factor_puncak_persen },
+              ].map((lf) => (
+                <div key={lf.label}>
+                  <p className="text-xs text-slate-500">{lf.label}</p>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <ProgressBar value={lf.value} color={loadFactorColor(lf.value)} height="sm" className="min-w-[80px]" />
+                    <span className="w-12 text-right text-xs font-semibold tabular-nums text-slate-700">{formatPercent(lf.value, 0)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 flex items-start gap-1.5 text-xs text-slate-400">
+              <CalendarDays className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {result.kapasitas.hari_perlu_tambahan > 0
+                ? `${result.kapasitas.hari_perlu_tambahan} dari ${result.horizon_hari} hari diprediksi melewati ${formatPercent(result.kapasitas.target_load_factor_persen, 0)} kapasitas kursi.`
+                : `Tidak ada hari yang diprediksi melewati ${formatPercent(result.kapasitas.target_load_factor_persen, 0)} kapasitas kursi.`}
+            </p>
           </Card>
         </>
       ) : !canWrite ? (
