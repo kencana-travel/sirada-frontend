@@ -248,8 +248,12 @@ export interface MatriksMuatanRute {
 export interface ForecastRunResponse {
   prediksi_periode_berikutnya: number;
   prediksi_tren_persen?: number;
+  model?: string;
+  adf_p_value?: number;
   akurasi_persen: number;
   mape_persen: number;
+  mae?: number;
+  rmse?: number;
   rekomendasi_unit_tambahan: number;
   catatan_jadwal?: string;
   temuan_pola?: string;

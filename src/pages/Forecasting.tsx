@@ -246,8 +246,19 @@ export default function Forecasting() {
                 <span className="text-4xl font-extrabold tabular-nums text-slate-900">{formatPercent(result.akurasi_persen, 1)}</span>
               </div>
               <p className="mt-2 text-xs text-slate-400">
-                MAPE <span className="font-semibold text-slate-600">{formatPercent(result.mape_persen, 2)}</span> (Mean Absolute Percentage Error)
+                MAPE <span className="font-semibold text-slate-600">{formatPercent(result.mape_persen, 2)}</span>
+                {result.mae !== undefined && (
+                  <> · MAE <span className="font-semibold text-slate-600">{formatNumber(result.mae)}</span></>
+                )}
+                {result.rmse !== undefined && (
+                  <> · RMSE <span className="font-semibold text-slate-600">{formatNumber(result.rmse)}</span></>
+                )}
               </p>
+              {result.model && (
+                <p className="mt-1 text-xs text-slate-400">
+                  Model <span className="font-semibold text-slate-600">{result.model}</span>
+                </p>
+              )}
             </Card>
 
             <Card>
