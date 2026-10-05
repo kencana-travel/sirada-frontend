@@ -46,3 +46,11 @@ export function initials(name: string): string {
 export function classNames(...values: (string | false | null | undefined)[]): string {
   return values.filter(Boolean).join(' ');
 }
+
+/** Nama model tanpa ordo, mis. "SARIMAX(1,0,1)(0,1,1,7)+kalender" -> "SARIMAX + kalender". */
+export function namaModel(model: string | null | undefined): string {
+  return (model ?? '')
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\s*\+\s*/g, ' + ')
+    .trim();
+}

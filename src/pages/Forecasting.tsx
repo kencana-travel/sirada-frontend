@@ -33,7 +33,7 @@ import { CenterSpinner } from '../components/Spinner';
 import { useAsync } from '../lib/useAsync';
 import { getRuteTersedia, runForecast } from '../api/forecasting';
 import { getErrorMessage } from '../api/client';
-import { formatNumber, formatPercent } from '../lib/format';
+import { formatNumber, formatPercent, namaModel } from '../lib/format';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import type {
@@ -113,8 +113,8 @@ export default function Forecasting() {
         setResult(res);
         toast.success(
           res.dari_cache
-            ? `Hasil ${res.model} diambil dari cache (data belum berubah).`
-            : `Model terpilih: ${res.model} (${formatNumber(res.durasi_detik)} detik).`,
+            ? `Hasil ${namaModel(res.model)} diambil dari cache (data belum berubah).`
+            : `Model terpilih: ${namaModel(res.model)} (${formatNumber(res.durasi_detik)} detik).`,
         );
       } catch (err) {
         const msg = getErrorMessage(err, 'Gagal menjalankan model forecasting.');
@@ -154,7 +154,7 @@ export default function Forecasting() {
       header: 'Model',
       render: (r) => (
         <div className="flex items-center gap-2">
-          <span className={r.terpilih ? 'font-semibold text-maroon-700' : 'text-slate-700'}>{r.model}</span>
+          <span className={r.terpilih ? 'font-semibold text-maroon-700' : 'text-slate-700'}>{namaModel(r.model)}</span>
           {r.terpilih && (
             <Badge tone="maroon" size="sm">
               Terpilih
@@ -296,7 +296,7 @@ export default function Forecasting() {
                 <span className="font-semibold text-slate-600">{formatNumber(result.rmse)}</span> pax/hari
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                Model <span className="font-semibold text-slate-600">{result.model}</span>
+                Model <span className="font-semibold text-slate-600">{namaModel(result.model)}</span>
               </p>
             </Card>
 
@@ -317,7 +317,7 @@ export default function Forecasting() {
           <Card
             className="mt-4"
             title="Proyeksi Demand: Aktual vs Prediksi"
-            subtitle={`Koridor ${result.rute} · horizon ${result.horizon_hari} hari · ${result.model}`}
+            subtitle={`Koridor ${result.rute} · horizon ${result.horizon_hari} hari · ${namaModel(result.model)}`}
             action={
               <div className="flex rounded-lg border border-hairline bg-white p-0.5">
                 {VIEWS.map((v) => (
